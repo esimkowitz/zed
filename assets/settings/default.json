@@ -348,7 +348,11 @@
     // The width of the minimap in pixels.
     "width": 100,
     // The font size of the minimap in pixels.
-    "font_size": 2
+    "font_size": 2,
+    /// Whether to render characters in the minimap.
+    ///
+    /// Default: true
+    "render_characters": true
   },
   // Enable middle-click paste on Linux.
   "middle_click_paste": true,

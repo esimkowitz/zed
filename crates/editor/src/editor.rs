@@ -7077,6 +7077,7 @@ impl Editor {
                 style,
                 editor_width,
                 |_| false,
+                true,
                 window,
                 cx,
             )

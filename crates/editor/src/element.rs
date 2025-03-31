@@ -1459,7 +1459,7 @@ impl EditorElement {
         visible_range: Range<DisplayRow>,
     ) -> Option<MinimapLayout> {
         let minimap_visible =
-            Self::is_minimap_visible(snapshot, minimap_settings, scrollbars_layout);
+            Self::should_show_minimap(snapshot, minimap_settings, scrollbars_layout);
         if !minimap_visible {
             return None;
         }
@@ -1548,7 +1548,7 @@ impl EditorElement {
         })
     }
 
-    fn is_minimap_visible(
+    fn should_show_minimap(
         snapshot: &EditorSnapshot,
         minimap_settings: &Minimap,
         scrollbar_layout: Option<&EditorScrollbars>,
@@ -1559,6 +1559,16 @@ impl EditorElement {
                 ShowMinimap::Never => false,
                 ShowMinimap::Auto => scrollbar_layout.is_some_and(|layout| layout.visible),
             }
+    }
+
+    fn should_render_characters(snapshot: &EditorSnapshot, minimap_settings: &Minimap) -> bool {
+        let mode = snapshot.mode;
+        let render_characters_setting = minimap_settings.render_characters;
+        let render_characters = match mode {
+            EditorMode::Minimap => render_characters_setting,
+            _ => true,
+        };
+        render_characters
     }
 
     fn get_minimap_bounds(
@@ -2655,6 +2665,7 @@ impl EditorElement {
         style: &EditorStyle,
         editor_width: Pixels,
         is_row_soft_wrapped: impl Copy + Fn(usize) -> bool,
+        render_characters: bool,
         window: &mut Window,
         cx: &mut App,
     ) -> Vec<LineWithInvisibles> {
@@ -2708,6 +2719,7 @@ impl EditorElement {
                 snapshot.mode,
                 editor_width,
                 is_row_soft_wrapped,
+                render_characters,
                 window,
                 cx,
             )
@@ -2761,6 +2773,7 @@ impl EditorElement {
         selected_buffer_ids: &Vec<BufferId>,
         is_row_soft_wrapped: impl Copy + Fn(usize) -> bool,
         sticky_header_excerpt_id: Option<ExcerptId>,
+        render_characters: bool,
         window: &mut Window,
         cx: &mut App,
     ) -> (AnyElement, Size<Pixels>) {
@@ -2780,6 +2793,7 @@ impl EditorElement {
                             &self.style,
                             editor_width,
                             is_row_soft_wrapped,
+                            render_characters,
                             window,
                             cx,
                         )
@@ -3109,6 +3123,7 @@ impl EditorElement {
         selected_buffer_ids: &Vec<BufferId>,
         is_row_soft_wrapped: impl Copy + Fn(usize) -> bool,
         sticky_header_excerpt_id: Option<ExcerptId>,
+        render_characters: bool,
         window: &mut Window,
         cx: &mut App,
     ) -> Result<Vec<BlockLayout>, HashMap<CustomBlockId, u32>> {
@@ -3150,6 +3165,7 @@ impl EditorElement {
                 selected_buffer_ids,
                 is_row_soft_wrapped,
                 sticky_header_excerpt_id,
+                render_characters,
                 window,
                 cx,
             );
@@ -3201,6 +3217,7 @@ impl EditorElement {
                 selected_buffer_ids,
                 is_row_soft_wrapped,
                 sticky_header_excerpt_id,
+                render_characters,
                 window,
                 cx,
             );
@@ -3252,6 +3269,7 @@ impl EditorElement {
                             selected_buffer_ids,
                             is_row_soft_wrapped,
                             sticky_header_excerpt_id,
+                            render_characters,
                             window,
                             cx,
                         );
@@ -6196,6 +6214,7 @@ impl LineWithInvisibles {
         editor_mode: EditorMode,
         text_width: Pixels,
         is_row_soft_wrapped: impl Copy + Fn(usize) -> bool,
+        render_characters: bool,
         window: &mut Window,
         cx: &mut App,
     ) -> Vec<Self> {
@@ -6281,8 +6300,14 @@ impl LineWithInvisibles {
                             Cow::Borrowed(text_style)
                         };
 
+                        let line_text: SharedString = if render_characters {
+                            x.clone().into()
+                        } else {
+                            "█".repeat(x.len()).into()
+                        };
+
                         let run = TextRun {
-                            len: x.len(),
+                            len: line_text.len(),
                             font: text_style.font(),
                             color: text_style.color,
                             background_color: text_style.background_color,
@@ -6291,7 +6316,7 @@ impl LineWithInvisibles {
                         };
                         let line_layout = window
                             .text_system()
-                            .shape_line(x, font_size, &[run])
+                            .shape_line(line_text, font_size, &[run])
                             .unwrap()
                             .with_len(highlighted_chunk.text.len());
 
@@ -6303,9 +6328,14 @@ impl LineWithInvisibles {
             } else {
                 for (ix, mut line_chunk) in highlighted_chunk.text.split('\n').enumerate() {
                     if ix > 0 {
+                        let line_text: SharedString = if render_characters {
+                            line.clone().into()
+                        } else {
+                            "█".repeat(line.len()).into()
+                        };
                         let shaped_line = window
                             .text_system()
-                            .shape_line(line.clone().into(), font_size, &styles)
+                            .shape_line(line_text, font_size, &styles)
                             .unwrap();
                         width += shaped_line.width;
                         len += shaped_line.len;
@@ -6353,7 +6383,7 @@ impl LineWithInvisibles {
                             strikethrough: text_style.strikethrough,
                         });
 
-                        if editor_mode == EditorMode::Full {
+                        if editor_mode == EditorMode::Full || editor_mode == EditorMode::Minimap {
                             // Line wrap pads its contents with fake whitespaces,
                             // avoid printing them
                             let is_soft_wrapped = is_row_soft_wrapped(row);
@@ -6779,6 +6809,7 @@ impl Element for EditorElement {
                                         &style,
                                         px(f32::MAX),
                                         |_| false, // Single lines never soft wrap
+                                        true,
                                         window,
                                         cx,
                                     )
@@ -7220,12 +7251,16 @@ impl Element for EditorElement {
                         cx,
                     );
 
+                    let render_characters =
+                        Self::should_render_characters(&snapshot, &minimap_settings);
+
                     let mut line_layouts = Self::layout_lines(
                         start_row..end_row,
                         &snapshot,
                         &self.style,
                         editor_width,
                         is_row_soft_wrapped,
+                        render_characters,
                         window,
                         cx,
                     );
@@ -7267,6 +7302,7 @@ impl Element for EditorElement {
                         &style,
                         editor_width,
                         is_row_soft_wrapped,
+                        render_characters,
                         window,
                         cx,
                     )
@@ -7309,6 +7345,7 @@ impl Element for EditorElement {
                             &selected_buffer_ids,
                             is_row_soft_wrapped,
                             sticky_header_excerpt_id,
+                            render_characters,
                             window,
                             cx,
                         )
@@ -8416,6 +8453,7 @@ pub fn layout_line(
     style: &EditorStyle,
     text_width: Pixels,
     is_row_soft_wrapped: impl Copy + Fn(usize) -> bool,
+    render_characters: bool,
     window: &mut Window,
     cx: &mut App,
 ) -> LineWithInvisibles {
@@ -8428,6 +8466,7 @@ pub fn layout_line(
         snapshot.mode,
         text_width,
         is_row_soft_wrapped,
+        render_characters,
         window,
         cx,
     )

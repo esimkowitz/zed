@@ -122,6 +122,7 @@ pub struct Minimap {
     pub thumb: MinimapThumb,
     pub width: f32,
     pub font_size: f32,
+    pub render_characters: bool,
 }
 
 impl Eq for Minimap {}
@@ -488,6 +489,10 @@ pub struct MinimapContent {
     ///
     /// Default: 2
     pub font_size: Option<f32>,
+    /// Whether to render characters in the minimap.
+    ///
+    /// Default: true
+    pub render_characters: Option<bool>,
 }
 
 /// Forcefully enable or disable the scrollbar for each axis
